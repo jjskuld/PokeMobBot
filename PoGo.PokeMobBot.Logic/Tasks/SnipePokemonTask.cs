@@ -151,10 +151,10 @@ namespace PoGo.PokeMobBot.Logic.Tasks
                              (q.IV == 0 && !session.LogicSettings.SnipeIgnoreUnknownIv) ||
                              (q.IV >= session.Inventory.GetPokemonTransferFilter(q.Id).KeepMinIvPercentage)) &&
                             !LocsVisited.Contains(new PokemonLocation(q.Latitude, q.Longitude))
-                            && !(q.ExpirationTimestamp != default(DateTime) &&
+                            && /*!(q.ExpirationTimestamp != default(DateTime) &&
                                  q.ExpirationTimestamp > new DateTime(2016) &&
                                  // make absolutely sure that the server sent a correct datetime
-                                 q.ExpirationTimestamp < DateTime.Now) &&
+                                 q.ExpirationTimestamp < DateTime.Now) && */
                             (q.Id == PokemonId.Missingno || pokemonIds.Contains(q.Id))).ToList() ??
                                                new List<SniperInfo>();
                         }
