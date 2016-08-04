@@ -7,6 +7,7 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
@@ -39,6 +40,24 @@ namespace PoGo.PokeMobBot.Logic.Tasks
         public DateTime TimeStampAdded { get; set; } = DateTime.Now;
     }
 
+    public class PokemonIdEnumConverter : JsonConverter
+    {
+        public override void WriteJson(JsonWriter writer, object value, JsonSerializer serializer)
+        {
+            writer.WriteValue((int)value);
+        }
+
+        public override object ReadJson(JsonReader reader, Type objectType, object existingValue, JsonSerializer serializer)
+        {
+            return (PokemonId)Convert.ToInt32(reader.Value);
+        }
+
+        public override bool CanConvert(Type objectType)
+        {
+            return objectType == typeof(int);
+        }
+    }
+
     public class PokemonLocation
     {
         public PokemonLocation(double latitude, double longitude)
@@ -53,10 +72,12 @@ namespace PoGo.PokeMobBot.Logic.Tasks
         [JsonProperty("latitude")]
         public double latitude { get; set; }
         [JsonProperty("longitude")]
-        public double longitude { get; set; }        
-        public int PokemonId { get; set; }
+        public double longitude { get; set; }
         [JsonProperty("pokemon_id")]
-        public PokemonId PokemonName { get; set; }
+        [JsonConverter(typeof(PokemonIdEnumConverter))]
+        public PokemonId PokemonId { get; set; }
+        [JsonProperty("pokemon_name")]
+        public String PokemonName { get; set; }
 
         public bool Equals(PokemonLocation obj)
         {
@@ -202,7 +223,16 @@ namespace PoGo.PokeMobBot.Logic.Tasks
                                 PokemonId = PokemonId.Missingno
                             });
 
-                            var scanResult = SnipeScanForPokemon(session, location); // initialize
+                            ScanResult scanResult;
+                            if (session.LogicSettings.UseGoRadarLocationServer)
+                            {
+                                scanResult = SnipeScanForPokemonUsingGoRadar(session, location); // initialize
+                            }
+                            else
+                            {
+                                scanResult = SnipeScanForPokemonUsingSkipLagged(session, location); // initialize
+                            }
+
                             List<PokemonLocation> locationsToSnipe = new List<PokemonLocation>();
 
                             if (session.LogicSettings.UsePokeSnipersLocationServer)
@@ -213,7 +243,7 @@ namespace PoGo.PokeMobBot.Logic.Tasks
                             {
                                 if (scanResult.Pokemon != null)
                                 {
-                                    var filteredPokemon = scanResult.Pokemon.Where(q => pokemonIds.Contains((PokemonId)q.PokemonName));
+                                    var filteredPokemon = scanResult.Pokemon.Where(q => pokemonIds.Contains((PokemonId)q.PokemonId));
                                     var notVisitedPokemon = filteredPokemon.Where(q => !LocsVisited.Contains(q));
                                     var notExpiredPokemon = notVisitedPokemon.Where(q => q.ExpirationTime < currentTimestamp);
 
@@ -223,7 +253,7 @@ namespace PoGo.PokeMobBot.Logic.Tasks
 
                             if (scanResult.Pokemon != null)
                             {
-                                var filteredPokemon = scanResult.Pokemon.Where(q => pokemonIds.Contains((PokemonId)q.PokemonName));
+                                var filteredPokemon = scanResult.Pokemon.Where(q => pokemonIds.Contains((PokemonId)q.PokemonId));
                                 var notVisitedPokemon = filteredPokemon.Where(q => !LocsVisited.Contains(q));
                                 var notExpiredPokemon = notVisitedPokemon.Where(q => q.ExpirationTime < currentTimestamp);
 
@@ -363,7 +393,7 @@ namespace PoGo.PokeMobBot.Logic.Tasks
             return true;
         }
 
-        private static ScanResult SnipeScanForPokemon(ISession session, Location location)
+        private static string[] CalculateLatLngBounds(ISession session, Location location)
         {
             var formatter = new NumberFormatInfo { NumberDecimalSeparator = "." };
 
@@ -377,8 +407,25 @@ namespace PoGo.PokeMobBot.Logic.Tasks
             var boundUpperRightLat = (location.Latitude + offset).ToString(formatter);
             var boundUpperRightLng = (location.Longitude + offset).ToString(formatter);
 
-            var uri = $"http://skiplagged.com/api/pokemon.php?bounds={boundLowerLeftLat},{boundLowerLeftLng},{boundUpperRightLat},{boundUpperRightLng}";
+            return new string[] { boundLowerLeftLat, boundLowerLeftLng, boundUpperRightLat, boundUpperRightLng };
+        }
 
+        private static ScanResult SnipeScanForPokemonUsingSkipLagged(ISession session, Location location)
+        {
+            string[] bounds = CalculateLatLngBounds(session, location);
+            var uri = $"http://skiplagged.com/api/pokemon.php?bounds={bounds[0]},{bounds[1]},{bounds[2]},{bounds[3]}";
+            return SnipeScanForPokemon(session, location, uri);
+        }
+
+        private static ScanResult SnipeScanForPokemonUsingGoRadar(ISession session, Location location)
+        {
+            string[] bounds = CalculateLatLngBounds(session, location);                        
+            var uri = $"https://map_data.goradar.io/raw_data?pokemon=true&pokestops=true&gyms=false&scanned=false&swLat={bounds[0]}&swLng={bounds[1]}&neLat={bounds[2]}&neLng={bounds[3]}";
+            return SnipeScanForPokemon(session, location, uri);
+        }
+
+        private static ScanResult SnipeScanForPokemon(ISession session, Location location, string uri)
+        {
             ScanResult scanResult;
 
             try
@@ -394,7 +441,15 @@ namespace PoGo.PokeMobBot.Logic.Tasks
                 var reader = new StreamReader(resp.GetResponseStream());
                 var fullresp = reader.ReadToEnd();
 
-                scanResult = JsonConvert.DeserializeObject<ScanResult>(fullresp);
+                // Post-processing of JSON response if needed here.
+                StringBuilder builder = new StringBuilder(fullresp);
+
+                if (uri.Contains("goradar.io"))
+                {
+                    builder.Replace("disappear_time", "expires");
+                }
+
+                scanResult = JsonConvert.DeserializeObject<ScanResult>(builder.ToString());
 
                 if (scanResult.Error != string.Empty && scanResult.Error != null)
                 {

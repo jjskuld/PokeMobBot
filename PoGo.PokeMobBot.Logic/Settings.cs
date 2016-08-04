@@ -226,6 +226,7 @@ namespace PoGo.PokeMobBot.Logic
         public int MinPokeballsWhileSnipe = 0;
         public bool UseSnipeLocationServer = false;
         public bool UsePokeSnipersLocationServer = false;
+        public bool UseGoRadarLocationServer = false;
         public string SnipeLocationServer = "localhost";
         public int SnipeLocationServerPort = 16969;
         public int SnipeRequestTimeoutSeconds = 5;
@@ -752,6 +753,7 @@ namespace PoGo.PokeMobBot.Logic
         public int SnipeLocationServerPort => _settings.SnipeLocationServerPort;
         public bool UseSnipeLocationServer => _settings.UseSnipeLocationServer;
         public bool UsePokeSnipersLocationServer => _settings.UsePokeSnipersLocationServer;
+        public bool UseGoRadarLocationServer => _settings.UseGoRadarLocationServer;
         public bool UseTransferIvForSnipe => _settings.UseTransferIvForSnipe;
         public bool SnipeIgnoreUnknownIv => _settings.SnipeIgnoreUnknownIv;
         public int MinDelayBetweenSnipes => _settings.MinDelayBetweenSnipes;
